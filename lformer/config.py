@@ -1,0 +1,72 @@
+"""
+Configuration for L-Former model
+"""
+
+from dataclasses import dataclass
+from typing import Dict, Any, Optional, Union
+
+
+@dataclass
+class ModelConfig:
+    """Configuration for L-Former model"""
+    
+    # Base Transformer parameters
+    vocab_size: int = 5000
+    d_model: int = 512
+    n_layers: int = 8
+    n_heads: int = 8
+    d_ff: int = 2048
+    dropout: float = 0.1
+    
+    # L-Path parameters
+    d_side: int = 128
+    tap_every: int = 1  # Tap every N layers (1 = every layer)
+    sequence_wise: bool = True  # True: [B, d_side], False: [B, T, d_side]
+    
+    # Aggregator configuration
+    aggregator: Dict[str, Any] = None  # {"type": "ema"|"gru"|"attn"}
+    
+    # Training parameters
+    detach_taps: bool = True  # Detach gradients from base transformer during Phase A
+    lambda_lm: float = 1.0  # Weight for language modeling loss
+    lambda_plan: float = 0.2  # Weight for reasoning loss
+    
+    # Reasoning head parameters
+    n_tools: int = 5
+    use_value_head: bool = True
+    use_tool_head: bool = True
+    plan_decoder: bool = False
+    
+    # Fine-tuning parameters
+    last_k_unfreeze: int = 0  # Number of last layers to unfreeze in Phase B
+    
+    # Advanced L-Path features
+    tree_checkpoint: int = 0  # Tree checkpoint every N layers (0 = off)
+    blend_into_lm: bool = False  # Blend S^L into LM head via gated concat
+    
+    def __post_init__(self):
+        """Set default aggregator if not specified"""
+        if self.aggregator is None:
+            self.aggregator = {"type": "ema"}
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert config to dictionary"""
+        return {k: v for k, v in self.__dict__.items()}
+    
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> 'ModelConfig':
+        """Create config from dictionary"""
+        return cls(**config_dict)
+    
+    @classmethod
+    def tiny(cls) -> 'ModelConfig':
+        """Create tiny config for testing"""
+        return cls(
+            vocab_size=1000,
+            d_model=128,
+            n_layers=4,
+            n_heads=4,
+            d_ff=512,
+            d_side=32,
+            n_tools=3
+        ) 
