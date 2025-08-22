@@ -224,29 +224,8 @@ Input: "What is 5 + 3?"
   Next token         Tool selection      Value prediction
 ```
 
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit issues and pull requests.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
 ## 🙏 Acknowledgments
 
 - Inspired by Deep Layer Aggregation (DLA)
 - Built on PyTorch and modern Transformer architectures
 - Thanks to the open-source AI community
-
-## 📚 Citation
-
-If you use L-Former in your research, please cite:
-
-```bibtex
-@misc{lformer2024,
-  title={L-Former: Transformer with L-shaped Progressive Aggregation Side-Path},
-  author={Your Name},
-  year={2024},
-  url={https://github.com/Gnav3852/L-former}
-}
-``` 
