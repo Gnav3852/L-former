@@ -101,8 +101,8 @@ class ToyPlanningDataset(Dataset):
         plan_templates = [
             ("add then multiply", [0, 1]),  # tool indices
             ("multiply then add", [1, 0]),
-            ("subtract then divide", [2, 3]),
-            ("divide then find max", [3, 4])
+            ("subtract then add", [2, 0]),
+            ("add then subtract", [0, 2])
         ]
         
         for _ in range(self.n_samples // 3):
