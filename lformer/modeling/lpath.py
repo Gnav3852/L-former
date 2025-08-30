@@ -85,47 +85,75 @@ class EmaAggregator(nn.Module):
                 nn.LayerNorm(d_side)
             )
     
-    def forward(self, z_list: List[torch.Tensor], s_init: Optional[torch.Tensor] = None) -> List[torch.Tensor]:
+    def forward(self, z_list: List[torch.Tensor], s_init: Optional[torch.Tensor] = None, sequence_wise: bool = True) -> List[torch.Tensor]:
         """
         Args:
-            z_list: List of [batch_size, d_side] or [batch_size, seq_len, d_side] projected taps
-            s_init: Initial reasoning state [batch_size, d_side]
+            z_list: List of projected taps
+            s_init: Initial reasoning state
+            sequence_wise: Whether to aggregate sequence-wise or token-wise
             
         Returns:
-            s_list: List of reasoning states [batch_size, d_side] for each layer
+            s_list: List of reasoning states
         """
         batch_size = z_list[0].shape[0]
         device = z_list[0].device
         
-        # Initialize reasoning state
-        if s_init is None:
-            s_init = torch.zeros(batch_size, self.d_side, device=device)
-        
-        s_list = []
-        s_current = s_init
-        
-        for l, z_l in enumerate(z_list):
-            # Compute alpha gate: σ(a^l) ≈ 0.12 initially
-            alpha_l = torch.sigmoid(self.alpha_params[l])
+        if sequence_wise:
+            # Sequence-wise logic: pool over sequence dimension
+            if s_init is None:
+                s_init = torch.zeros(batch_size, self.d_side, device=device)
             
-            # Apply MLP phi to current tap
-            phi_z = self.phi(z_l)
+            s_list = []
+            s_current = s_init
             
-            # If z_l has sequence dimension, pool it first
-            if phi_z.dim() == 3:  # [B, seq_len, d_side]
-                phi_z = phi_z.mean(dim=1)  # [B, d_side]
+            for l, z_l in enumerate(z_list):
+                # Compute alpha gate: σ(a^l) ≈ 0.12 initially
+                alpha_l = torch.sigmoid(self.alpha_params[l])
+                
+                # Apply MLP phi to current tap
+                phi_z = self.phi(z_l)
+                
+                # If z_l has sequence dimension, pool it first
+                if phi_z.dim() == 3:  # [B, seq_len, d_side]
+                    phi_z = phi_z.mean(dim=1)  # [B, d_side]
+                
+                # EMA update: S^l = (1-α^l) * S^{l-1} + α^l * φ(z^l)
+                s_current = (1 - alpha_l) * s_current + alpha_l * phi_z
+                
+                # Tree checkpoint: if enabled and at checkpoint layer
+                if self.tree_checkpoint > 0 and (l + 1) % self.tree_checkpoint == 0:
+                    # Concatenate current S with checkpoint S and process
+                    s_checkpoint = s_list[-(self.tree_checkpoint // 2)] if len(s_list) >= self.tree_checkpoint // 2 else s_init
+                    s_combined = torch.cat([s_current, s_checkpoint], dim=-1)
+                    s_current = self.tree_mlp(s_combined)
+                
+                s_list.append(s_current)
+        else:
+            # Token-wise logic: maintain sequence dimension
+            seq_len = z_list[0].shape[1]
+            if s_init is None:
+                s_init = torch.zeros(batch_size, seq_len, self.d_side, device=device)
             
-            # EMA update: S^l = (1-α^l) * S^{l-1} + α^l * φ(z^l)
-            s_current = (1 - alpha_l) * s_current + alpha_l * phi_z
+            s_list = []
+            s_current = s_init
             
-            # Tree checkpoint: if enabled and at checkpoint layer
-            if self.tree_checkpoint > 0 and (l + 1) % self.tree_checkpoint == 0:
-                # Concatenate current S with checkpoint S and process
-                s_checkpoint = s_list[-(self.tree_checkpoint // 2)] if len(s_list) >= self.tree_checkpoint // 2 else s_init
-                s_combined = torch.cat([s_current, s_checkpoint], dim=-1)
-                s_current = self.tree_mlp(s_combined)
-            
-            s_list.append(s_current)
+            for l, z_l in enumerate(z_list):
+                # Compute alpha gate: σ(a^l) ≈ 0.12 initially
+                alpha_l = torch.sigmoid(self.alpha_params[l])
+                
+                # Apply MLP phi to current tap (maintains [B, seq_len, d_side])
+                phi_z = self.phi(z_l)
+                
+                # EMA update: S^l = (1-α^l) * S^{l-1} + α^l * φ(z^l)
+                s_current = (1 - alpha_l) * s_current + alpha_l * phi_z
+                
+                # Tree checkpoint logic for token-wise...
+                if self.tree_checkpoint > 0 and (l + 1) % self.tree_checkpoint == 0:
+                    s_checkpoint = s_list[-(self.tree_checkpoint // 2)] if len(s_list) >= self.tree_checkpoint // 2 else s_init
+                    s_combined = torch.cat([s_current, s_checkpoint], dim=-1)
+                    s_current = self.tree_mlp(s_combined)
+                
+                s_list.append(s_current)
         
         return s_list
 
@@ -150,37 +178,56 @@ class GruAggregator(nn.Module):
             nn.LayerNorm(d_side)
         )
     
-    def forward(self, z_list: List[torch.Tensor], s_init: Optional[torch.Tensor] = None) -> List[torch.Tensor]:
+    def forward(self, z_list: List[torch.Tensor], s_init: Optional[torch.Tensor] = None, sequence_wise: bool = True) -> List[torch.Tensor]:
         """
         Args:
-            z_list: List of [batch_size, d_side] or [batch_size, seq_len, d_side] projected taps
-            s_init: Initial reasoning state [batch_size, d_side]
+            z_list: List of projected taps
+            s_init: Initial reasoning state
+            sequence_wise: Whether to aggregate sequence-wise or token-wise
             
         Returns:
-            s_list: List of reasoning states [batch_size, d_side] for each layer
+            s_list: List of reasoning states
         """
         batch_size = z_list[0].shape[0]
         device = z_list[0].device
         
-        # Initialize reasoning state
-        if s_init is None:
-            s_init = torch.zeros(batch_size, self.d_side, device=device)
-        
-        s_list = []
-        s_current = s_init
-        
-        for z_l in z_list:
-            # Apply MLP phi to current tap
-            phi_z = self.phi(z_l)
+        if sequence_wise:
+            # Sequence-wise logic: pool over sequence dimension
+            if s_init is None:
+                s_init = torch.zeros(batch_size, self.d_side, device=device)
             
-            # If z_l has sequence dimension, pool it first
-            if phi_z.dim() == 3:  # [B, seq_len, d_side]
-                phi_z = phi_z.mean(dim=1)  # [B, d_side]
+            s_list = []
+            s_current = s_init
             
-            # GRU update: treat depth as time
-            s_current = self.gru(phi_z, s_current)
+            for z_l in z_list:
+                # Apply MLP phi to current tap
+                phi_z = self.phi(z_l)
+                
+                # If z_l has sequence dimension, pool it first
+                if phi_z.dim() == 3:  # [B, seq_len, d_side]
+                    phi_z = phi_z.mean(dim=1)  # [B, d_side]
+                
+                # GRU update: treat depth as time
+                s_current = self.gru(phi_z, s_current)
+                
+                s_list.append(s_current)
+        else:
+            # Token-wise logic: maintain sequence dimension
+            seq_len = z_list[0].shape[1]
+            if s_init is None:
+                s_init = torch.zeros(batch_size, seq_len, self.d_side, device=device)
             
-            s_list.append(s_current)
+            s_list = []
+            s_current = s_init
+            
+            for z_l in z_list:
+                # Apply MLP phi to current tap (maintains [B, seq_len, d_side])
+                phi_z = self.phi(z_l)
+                
+                # GRU update: treat depth as time (for each token position)
+                s_current = self.gru(phi_z, s_current)
+                
+                s_list.append(s_current)
         
         return s_list
 
@@ -209,55 +256,96 @@ class DepthAttentionAggregator(nn.Module):
         # Output projection
         self.output_proj = nn.Linear(d_side, d_side)
     
-    def forward(self, z_list: List[torch.Tensor], s_init: Optional[torch.Tensor] = None) -> List[torch.Tensor]:
+    def forward(self, z_list: List[torch.Tensor], s_init: Optional[torch.Tensor] = None, sequence_wise: bool = True) -> List[torch.Tensor]:
         """
         Args:
-            z_list: List of [batch_size, d_side] or [batch_size, seq_len, d_side] projected taps
-            s_init: Initial reasoning state [batch_size, d_side]
+            z_list: List of projected taps
+            s_init: Initial reasoning state
+            sequence_wise: Whether to aggregate sequence-wise or token-wise
             
         Returns:
-            s_list: List of reasoning states [batch_size, d_side] for each layer
+            s_list: List of reasoning states
         """
         batch_size = z_list[0].shape[0]
         device = z_list[0].device
         
-        # Initialize reasoning state
-        if s_init is None:
-            s_init = torch.zeros(batch_size, self.d_side, device=device)
-        
-        s_list = []
-        s_current = s_init
-        memory = []  # FIFO memory of previous taps
-        
-        for z_l in z_list:
-            # Apply MLP phi to current tap
-            phi_z = self.phi(z_l)
+        if sequence_wise:
+            # Sequence-wise logic: pool over sequence dimension
+            if s_init is None:
+                s_init = torch.zeros(batch_size, self.d_side, device=device)
             
-            # If z_l has sequence dimension, pool it first
-            if phi_z.dim() == 3:  # [B, seq_len, d_side]
-                phi_z = phi_z.mean(dim=1)  # [B, d_side]
+            s_list = []
+            s_current = s_init
+            memory = []  # FIFO memory of previous taps
             
-            # Add to memory (FIFO)
-            memory.append(phi_z)
-            if len(memory) > self.max_memory:
-                memory.pop(0)
-            
-            # Attend from current S to memory
-            if len(memory) > 1:
-                memory_tensor = torch.stack(memory, dim=1)  # [B, mem_len, d_side]
-                s_expanded = s_current.unsqueeze(1)  # [B, 1, d_side]
+            for z_l in z_list:
+                # Apply MLP phi to current tap
+                phi_z = self.phi(z_l)
                 
-                # Cross-attention: S attends to memory
-                attended, _ = self.attention(s_expanded, memory_tensor, memory_tensor)
-                attended = attended.squeeze(1)  # [B, d_side]
+                # If z_l has sequence dimension, pool it first
+                if phi_z.dim() == 3:  # [B, seq_len, d_side]
+                    phi_z = phi_z.mean(dim=1)  # [B, d_side]
                 
-                # Combine current S with attended memory
-                s_current = self.output_proj(s_current + attended)
-            else:
-                # No memory yet, just use current tap
-                s_current = phi_z
+                # Add to memory (FIFO)
+                memory.append(phi_z)
+                if len(memory) > self.max_memory:
+                    memory.pop(0)
+                
+                # Attend from current S to memory
+                if len(memory) > 1:
+                    memory_tensor = torch.stack(memory, dim=1)  # [B, mem_len, d_side]
+                    s_expanded = s_current.unsqueeze(1)  # [B, 1, d_side]
+                    
+                    # Cross-attention: S attends to memory
+                    attended, _ = self.attention(s_expanded, memory_tensor, memory_tensor)
+                    attended = attended.squeeze(1)  # [B, d_side]
+                    
+                    # Combine current S with attended memory
+                    s_current = self.output_proj(s_current + attended)
+                else:
+                    # No memory yet, just use current tap
+                    s_current = phi_z
+                
+                s_list.append(s_current)
+        else:
+            # Token-wise logic: maintain sequence dimension
+            seq_len = z_list[0].shape[1]
+            if s_init is None:
+                s_init = torch.zeros(batch_size, seq_len, self.d_side, device=device)
             
-            s_list.append(s_current)
+            s_list = []
+            s_current = s_init
+            memory = []  # FIFO memory of previous taps
+            
+            for z_l in z_list:
+                # Apply MLP phi to current tap (maintains [B, seq_len, d_side])
+                phi_z = self.phi(z_l)
+                
+                # Add to memory (FIFO) - each memory item is [B, seq_len, d_side]
+                memory.append(phi_z)
+                if len(memory) > self.max_memory:
+                    memory.pop(0)
+                
+                # Attend from current S to memory
+                if len(memory) > 1:
+                    memory_tensor = torch.stack(memory, dim=1)  # [B, mem_len, seq_len, d_side]
+                    s_expanded = s_current.unsqueeze(1)  # [B, 1, seq_len, d_side]
+                    
+                    # Cross-attention: S attends to memory (reshape for attention)
+                    B, mem_len, seq_len, d_side = memory_tensor.shape
+                    memory_flat = memory_tensor.view(B, mem_len * seq_len, d_side)
+                    s_flat = s_current.view(B, seq_len, d_side)
+                    
+                    # Cross-attention: S attends to memory
+                    attended, _ = self.attention(s_flat, memory_flat, memory_flat)
+                    
+                    # Combine current S with attended memory
+                    s_current = self.output_proj(s_current + attended)
+                else:
+                    # No memory yet, just use current tap
+                    s_current = phi_z
+                
+                s_list.append(s_current)
         
         return s_list
 
@@ -301,7 +389,7 @@ class LPath(nn.Module):
             detach_taps: Whether to detach gradients from taps
             
         Returns:
-            s_list: List of reasoning states [batch_size, d_side] for each layer
+            s_list: List of reasoning states
         """
         # Filter taps based on tap_every
         tapped_layers = hidden_states[::self.config.tap_every]
@@ -315,7 +403,7 @@ class LPath(nn.Module):
             z_l = self.tap_projector(h_l)
             z_list.append(z_l)
         
-        # Aggregate progressively
-        s_list = self.aggregator(z_list)
+        # Aggregate progressively (pass sequence_wise flag)
+        s_list = self.aggregator(z_list, sequence_wise=self.config.sequence_wise)
         
         return s_list 
