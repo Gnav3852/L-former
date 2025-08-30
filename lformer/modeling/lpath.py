@@ -88,7 +88,7 @@ class EmaAggregator(nn.Module):
     def forward(self, z_list: List[torch.Tensor], s_init: Optional[torch.Tensor] = None) -> List[torch.Tensor]:
         """
         Args:
-            z_list: List of [batch_size, d_side] projected taps
+            z_list: List of [batch_size, d_side] or [batch_size, seq_len, d_side] projected taps
             s_init: Initial reasoning state [batch_size, d_side]
             
         Returns:
@@ -110,6 +110,10 @@ class EmaAggregator(nn.Module):
             
             # Apply MLP phi to current tap
             phi_z = self.phi(z_l)
+            
+            # If z_l has sequence dimension, pool it first
+            if phi_z.dim() == 3:  # [B, seq_len, d_side]
+                phi_z = phi_z.mean(dim=1)  # [B, d_side]
             
             # EMA update: S^l = (1-α^l) * S^{l-1} + α^l * φ(z^l)
             s_current = (1 - alpha_l) * s_current + alpha_l * phi_z
@@ -149,7 +153,7 @@ class GruAggregator(nn.Module):
     def forward(self, z_list: List[torch.Tensor], s_init: Optional[torch.Tensor] = None) -> List[torch.Tensor]:
         """
         Args:
-            z_list: List of [batch_size, d_side] projected taps
+            z_list: List of [batch_size, d_side] or [batch_size, seq_len, d_side] projected taps
             s_init: Initial reasoning state [batch_size, d_side]
             
         Returns:
@@ -168,6 +172,10 @@ class GruAggregator(nn.Module):
         for z_l in z_list:
             # Apply MLP phi to current tap
             phi_z = self.phi(z_l)
+            
+            # If z_l has sequence dimension, pool it first
+            if phi_z.dim() == 3:  # [B, seq_len, d_side]
+                phi_z = phi_z.mean(dim=1)  # [B, d_side]
             
             # GRU update: treat depth as time
             s_current = self.gru(phi_z, s_current)
@@ -204,7 +212,7 @@ class DepthAttentionAggregator(nn.Module):
     def forward(self, z_list: List[torch.Tensor], s_init: Optional[torch.Tensor] = None) -> List[torch.Tensor]:
         """
         Args:
-            z_list: List of [batch_size, d_side] projected taps
+            z_list: List of [batch_size, d_side] or [batch_size, seq_len, d_side] projected taps
             s_init: Initial reasoning state [batch_size, d_side]
             
         Returns:
@@ -224,6 +232,10 @@ class DepthAttentionAggregator(nn.Module):
         for z_l in z_list:
             # Apply MLP phi to current tap
             phi_z = self.phi(z_l)
+            
+            # If z_l has sequence dimension, pool it first
+            if phi_z.dim() == 3:  # [B, seq_len, d_side]
+                phi_z = phi_z.mean(dim=1)  # [B, d_side]
             
             # Add to memory (FIFO)
             memory.append(phi_z)
