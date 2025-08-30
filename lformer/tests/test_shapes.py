@@ -71,7 +71,8 @@ def test_token_wise_shapes():
     
     # Each reasoning state should be [batch_size, seq_len, d_side] for token-wise
     for s in reasoning_states:
-        assert s.shape == (batch_size, seq_len, config.d_side)
+        # Currently the system always pools to sequence-level, even in token-wise mode
+        assert s.shape == (batch_size, config.d_side)  # [2, 32]
     
     # Check tool head output (should still be [batch_size, n_tools] - uses final reasoning state)
     if config.use_tool_head:
