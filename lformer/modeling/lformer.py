@@ -117,12 +117,12 @@ class LFormer(nn.Module):
         
         # Tool head
         if self.config.use_tool_head:
-            logits_tools = self.tool_head(final_reasoning)
+            logits_tools = self.tool_head(final_reasoning, sequence_wise=self.config.sequence_wise)
             outputs["logits_tools"] = logits_tools
         
         # Value head
         if self.config.use_value_head:
-            predicted_values = self.value_head(final_reasoning)
+            predicted_values = self.value_head(final_reasoning, sequence_wise=self.config.sequence_wise)
             outputs["values"] = predicted_values
         
         # Plan decoder

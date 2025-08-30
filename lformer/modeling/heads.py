@@ -49,19 +49,26 @@ class ToolHead(nn.Module):
         self.projection = nn.Linear(d_side, n_tools)
         self.dropout = nn.Dropout(dropout)
     
-    def forward(self, reasoning_state: torch.Tensor) -> torch.Tensor:
+    def forward(self, reasoning_state: torch.Tensor, sequence_wise: bool = True) -> torch.Tensor:
         """
         Args:
-            reasoning_state: [batch_size, d_side]
+            reasoning_state: [batch_size, d_side] or [batch_size, seq_len, d_side]
+            sequence_wise: Whether the reasoning state is sequence-wise or token-wise
             
         Returns:
-            logits: [batch_size, n_tools]
+            logits: [batch_size, n_tools] or [batch_size, seq_len, n_tools]
         """
         # Apply dropout
         reasoning_state = self.dropout(reasoning_state)
         
-        # Project to tool space
-        logits = self.projection(reasoning_state)
+        if sequence_wise:
+            # Sequence-wise: reasoning_state is [batch_size, d_side]
+            logits = self.projection(reasoning_state)
+        else:
+            # Token-wise: reasoning_state is [batch_size, seq_len, d_side]
+            # Pool over sequence dimension to get sequence-level tool prediction
+            pooled_state = reasoning_state.mean(dim=1)  # [batch_size, d_side]
+            logits = self.projection(pooled_state)
         
         return logits
 
@@ -77,10 +84,11 @@ class ValueHead(nn.Module):
         self.projection = nn.Linear(d_side, 1)
         self.dropout = nn.Dropout(dropout)
     
-    def forward(self, reasoning_state: torch.Tensor) -> torch.Tensor:
+    def forward(self, reasoning_state: torch.Tensor, sequence_wise: bool = True) -> torch.Tensor:
         """
         Args:
-            reasoning_state: [batch_size, d_side]
+            reasoning_state: [batch_size, d_side] or [batch_size, seq_len, d_side]
+            sequence_wise: Whether the reasoning state is sequence-wise or token-wise
             
         Returns:
             values: [batch_size, 1]
@@ -88,8 +96,14 @@ class ValueHead(nn.Module):
         # Apply dropout
         reasoning_state = self.dropout(reasoning_state)
         
-        # Project to scalar value
-        values = self.projection(reasoning_state)
+        if sequence_wise:
+            # Sequence-wise: reasoning_state is [batch_size, d_side]
+            values = self.projection(reasoning_state)
+        else:
+            # Token-wise: reasoning_state is [batch_size, seq_len, d_side]
+            # Pool over sequence dimension to get sequence-level value prediction
+            pooled_state = reasoning_state.mean(dim=1)  # [batch_size, d_side]
+            values = self.projection(pooled_state)
         
         return values
 
