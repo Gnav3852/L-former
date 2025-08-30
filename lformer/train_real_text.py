@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+"""
+Training script for L-Former with REAL TEXT dataset - FIXED VERSION
+"""
+
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
@@ -73,11 +78,13 @@ def main():
     
     args = parser.parse_args()
     
-    # Create config
+    # Create config with GPT-2 vocabulary size
     if args.tiny:
         config = ModelConfig.tiny()
+        config.vocab_size = 50257  # GPT-2 vocabulary size
     else:
         config = ModelConfig()
+        config.vocab_size = 50257  # GPT-2 vocabulary size
     
     print(f"Config: {config}")
     
