@@ -210,11 +210,35 @@ def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
     # Handle optional fields
     tool_labels = None
     if any(item["tool_labels"] is not None for item in batch):
-        tool_labels = torch.stack([item["tool_labels"] if item["tool_labels"] is not None else torch.tensor(0) for item in batch])
+        # Ensure all tool_labels have the same shape before stacking
+        tool_labels_list = []
+        for item in batch:
+            if item["tool_labels"] is not None:
+                tool_labels_list.append(item["tool_labels"])
+            else:
+                # Create a dummy tensor with the same shape as the first non-None value
+                if tool_labels_list:
+                    dummy_shape = tool_labels_list[0].shape
+                    tool_labels_list.append(torch.zeros(dummy_shape, dtype=torch.long))
+                else:
+                    tool_labels_list.append(torch.tensor(0, dtype=torch.long))
+        tool_labels = torch.stack(tool_labels_list)
     
     values = None
     if any(item["values"] is not None for item in batch):
-        values = torch.stack([item["values"] if item["values"] is not None else torch.tensor(0.0) for item in batch])
+        # Ensure all values have the same shape before stacking
+        values_list = []
+        for item in batch:
+            if item["values"] is not None:
+                values_list.append(item["values"])
+            else:
+                # Create a dummy tensor with the same shape as the first non-None value
+                if values_list:
+                    dummy_shape = values_list[0].shape
+                    values_list.append(torch.zeros(dummy_shape, dtype=torch.float))
+                else:
+                    values_list.append(torch.tensor([0.0], dtype=torch.float))
+        values = torch.stack(values_list)
     
     plan_labels = None
     if any(item["plan_labels"] is not None for item in batch):
