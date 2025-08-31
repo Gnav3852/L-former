@@ -89,6 +89,19 @@ def train_epoch(model, dataloader, optimizer, device, config):
             print(f"Batch {batch_idx}: Tool Loss: {losses['tool'].item():.4f}, "
                   f"LM Loss: {losses['lm'].item():.4f}, "
                   f"Grad Norm: {total_norm.item():.4f}")
+        
+        # Monitor tool head gradients specifically
+        if batch_idx % 50 == 0:
+            tool_head_grads = []
+            for name, param in model.named_parameters():
+                if 'tool_head' in name and param.grad is not None:
+                    tool_head_grads.append(param.grad.norm().item())
+            
+            if tool_head_grads:
+                avg_tool_grad = sum(tool_head_grads) / len(tool_head_grads)
+                print(f"Tool Head Grad Norm: {avg_tool_grad:.4f}")
+            else:
+                print("⚠️  NO GRADIENTS TO TOOL HEAD!")
     
     # Print gradient statistics
     if grad_norms:

@@ -60,15 +60,17 @@ class ModelConfig:
     
     @classmethod
     def tiny(cls) -> 'ModelConfig':
-        """Create tiny config for testing"""
+        """Create ultra-tiny config for testing"""
         return cls(
             vocab_size=1000,
-            d_model=64,        # Reduce from 128
-            n_layers=2,        # Reduce from 4
-            n_heads=2,         # Reduce from 4
-            d_ff=256,         # Reduce from 512
-            d_side=16,        # Reduce from 32
+            d_model=32,         # Reduce from 128
+            n_layers=1,         # Reduce from 4
+            n_heads=2,          # Reduce from 4
+            d_ff=128,          # Reduce from 512
+            d_side=8,          # Reduce from 32
             n_tools=3,
-            use_value_head=False,  # Keep disabled
-            use_tool_head=True
+            use_value_head=False,
+            use_tool_head=True,
+            lambda_lm: float = 0.1,      # Reduce LM weight
+            lambda_plan: float = 5.0     # Increase tool weight dramatically
         ) 
