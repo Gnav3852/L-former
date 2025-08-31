@@ -86,6 +86,52 @@ def train_epoch(model, dataloader, optimizer, device, config):
     }
 
 
+def validate_epoch(model, dataloader, device, config):
+    """Validate for one epoch - NO GRADIENTS"""
+    model.eval()
+    total_loss = 0
+    total_lm_loss = 0
+    total_tool_loss = 0
+    total_value_loss = 0
+    
+    with torch.no_grad():  # No gradients during validation
+        for batch_idx, batch in enumerate(tqdm(dataloader, desc="Validation")):
+            # Move to device
+            input_ids = batch["input_ids"].to(device)
+            labels = batch["labels"].to(device)
+            tool_labels = batch["tool_labels"].to(device) if batch["tool_labels"] is not None else None
+            values = batch["values"].to(device) if batch["values"] is not None else None
+            plan_labels = batch["plan_labels"].to(device) if batch["plan_labels"] is not None else None
+            
+            # Forward pass only
+            outputs = model(
+                input_ids=input_ids,
+                labels=labels,
+                tool_labels=tool_labels,
+                values=values,
+                plan_labels=plan_labels
+            )
+            
+            # Get losses (no backward pass)
+            losses = outputs["losses"]
+            total_loss += losses["total"].item()
+            total_lm_loss += losses["lm"].item()
+            
+            if "tool" in losses:
+                total_tool_loss += losses["tool"].item()
+            if "value" in losses:
+                total_value_loss += losses["value"].item()
+    
+    # Return average losses
+    num_batches = len(dataloader)
+    return {
+        "total": total_loss / num_batches,
+        "lm": total_lm_loss / num_batches,
+        "tool": total_tool_loss / num_batches if total_tool_loss > 0 else 0,
+        "value": total_value_loss / num_batches if total_value_loss > 0 else 0
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Train L-Former with real text")
     parser.add_argument("--tiny", action="store_true", help="Use tiny config")
@@ -193,8 +239,7 @@ def main():
         
         # Validation
         model.eval()
-        with torch.no_grad():
-            val_losses = train_epoch(model, val_dataloader, optimizer, device, config)
+        val_losses = validate_epoch(model, val_dataloader, device, config)
         
         # Print losses
         print(f"Train Losses: Total={train_losses['total']:.4f}, LM={train_losses['lm']:.4f}, Tool={train_losses['tool']:.4f}, Value={train_losses['value']:.4f}")
