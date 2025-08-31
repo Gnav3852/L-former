@@ -111,6 +111,11 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
+    # If using CPU, reduce batch size for memory
+    if device.type == "cpu":
+        args.batch_size = min(args.batch_size, 8)
+        print(f"CPU detected, reducing batch size to {args.batch_size}")
+    
     # Create model
     model = LFormer(config)
     model = model.to(device)
@@ -177,7 +182,7 @@ def main():
     
     # Add learning rate scheduler
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=2, verbose=True
+        optimizer, mode='min', factor=0.5, patience=2
     )
     
     for epoch in range(1, args.epochs + 1):
