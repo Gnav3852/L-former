@@ -61,7 +61,7 @@ class ModelConfig:
     @classmethod
     def tiny(cls) -> 'ModelConfig':
         """Create ultra-tiny config for testing"""
-        return cls(
+        config = cls(
             vocab_size=1000,
             d_model=32,         # Reduce from 128
             n_layers=1,         # Reduce from 4
@@ -70,7 +70,9 @@ class ModelConfig:
             d_side=8,          # Reduce from 32
             n_tools=3,
             use_value_head=False,
-            use_tool_head=True,
-            lambda_lm: float = 0.1,      # Reduce LM weight
-            lambda_plan: float = 5.0     # Increase tool weight dramatically
-        ) 
+            use_tool_head=True
+        )
+        # Set loss weights after creation
+        config.lambda_lm = 0.1      # Reduce LM weight
+        config.lambda_plan = 5.0    # Increase tool weight dramatically
+        return config 
