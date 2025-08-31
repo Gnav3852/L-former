@@ -24,22 +24,29 @@ class RealTextDataset(Dataset):
         """Generate examples with meaningful text"""
         examples = []
         
-        # Tool selection examples
-        tool_examples = self._generate_tool_examples()
+        # Calculate exact numbers for each type
+        total_samples = self.n_samples
+        tool_samples = total_samples // 3
+        plan_samples = total_samples // 3
+        value_samples = total_samples - tool_samples - plan_samples  # Handle remainder
+        
+        # Tool selection examples - EXACTLY balanced
+        tool_examples = self._generate_tool_examples(tool_samples)
         examples.extend(tool_examples)
         
         # Planning examples
-        planning_examples = self._generate_planning_examples()
+        planning_examples = self._generate_planning_examples(plan_samples)
         examples.extend(planning_examples)
         
         # Value examples
-        value_examples = self._generate_value_examples()
+        value_examples = self._generate_value_examples(value_samples)
         examples.extend(value_examples)
         
+        # Shuffle but don't truncate
         random.shuffle(examples)
-        return examples[:self.n_samples]
+        return examples
     
-    def _generate_tool_examples(self) -> List[Dict[str, Any]]:
+    def _generate_tool_examples(self, num_samples: int) -> List[Dict[str, Any]]:
         """Tool selection with REAL TEXT - BALANCED VERSION"""
         examples = []
         
@@ -51,7 +58,7 @@ class RealTextDataset(Dataset):
         ]
         
         # Generate EXACTLY equal numbers for each tool
-        samples_per_tool = self.n_samples // 3
+        samples_per_tool = num_samples // self.n_tools
         for tool_idx in range(self.n_tools):
             for _ in range(samples_per_tool):
                 text = tool_texts[tool_idx]
@@ -71,7 +78,7 @@ class RealTextDataset(Dataset):
         
         return examples
     
-    def _generate_planning_examples(self) -> List[Dict[str, Any]]:
+    def _generate_planning_examples(self, num_samples: int) -> List[Dict[str, Any]]:
         """Planning with REAL TEXT"""
         examples = []
         
@@ -82,7 +89,7 @@ class RealTextDataset(Dataset):
             ("add then subtract", [0, 2], "I need to add 8 and 4, then subtract 3 from the total")
         ]
         
-        for _ in range(self.n_samples // 3):
+        for _ in range(num_samples):
             plan_name, tool_sequence, text = random.choice(plan_templates)
             
             input_ids = self.tokenizer.encode(text, max_length=self.max_seq_len, truncation=True, padding='max_length')
@@ -103,11 +110,11 @@ class RealTextDataset(Dataset):
         
         return examples
     
-    def _generate_value_examples(self) -> List[Dict[str, Any]]:
+    def _generate_value_examples(self, num_samples: int) -> List[Dict[str, Any]]:
         """Value prediction with REAL TEXT"""
         examples = []
         
-        for _ in range(self.n_samples // 3):
+        for _ in range(num_samples):
             a = random.randint(1, 20)
             b = random.randint(1, 20)
             operation = random.choice(["add", "multiply", "subtract"])
