@@ -28,8 +28,8 @@ class ModelConfig:
     
     # Training parameters
     detach_taps: bool = True  # Detach gradients from base transformer during Phase A
-    lambda_lm: float = 1.0  # Weight for language modeling loss
-    lambda_plan: float = 0.2  # Weight for reasoning loss
+    lambda_lm: float = 0.3      # Reduce LM weight
+    lambda_plan: float = 1.0    # Increase reasoning weight
     
     # Reasoning head parameters
     n_tools: int = 5

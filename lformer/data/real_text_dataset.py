@@ -40,7 +40,7 @@ class RealTextDataset(Dataset):
         return examples[:self.n_samples]
     
     def _generate_tool_examples(self) -> List[Dict[str, Any]]:
-        """Tool selection with REAL TEXT"""
+        """Tool selection with REAL TEXT - BALANCED VERSION"""
         examples = []
         
         # Clear, distinct text for each tool
@@ -50,22 +50,24 @@ class RealTextDataset(Dataset):
             "Calculate 10 minus 3"                      # Tool 2: Subtract
         ]
         
-        for _ in range(self.n_samples // 3):
-            tool_idx = random.randint(0, self.n_tools - 1)
-            text = tool_texts[tool_idx]
-            
-            # Tokenize with real tokenizer
-            input_ids = self.tokenizer.encode(text, max_length=self.max_seq_len, truncation=True, padding='max_length')
-            input_ids = torch.tensor(input_ids)
-            
-            examples.append({
-                "input_ids": input_ids,
-                "labels": input_ids,
-                "tool_labels": torch.tensor(tool_idx),
-                "values": None,
-                "plan_labels": None,
-                "type": "tool"
-            })
+        # Generate EXACTLY equal numbers for each tool
+        samples_per_tool = self.n_samples // 3
+        for tool_idx in range(self.n_tools):
+            for _ in range(samples_per_tool):
+                text = tool_texts[tool_idx]
+                
+                # Tokenize with real tokenizer
+                input_ids = self.tokenizer.encode(text, max_length=self.max_seq_len, truncation=True, padding='max_length')
+                input_ids = torch.tensor(input_ids)
+                
+                examples.append({
+                    "input_ids": input_ids,
+                    "labels": input_ids,
+                    "tool_labels": torch.tensor(tool_idx),
+                    "values": None,
+                    "plan_labels": None,
+                    "type": "tool"
+                })
         
         return examples
     
@@ -139,6 +141,29 @@ class RealTextDataset(Dataset):
     
     def __getitem__(self, idx):
         return self.examples[idx]
+    
+    def print_stats(self):
+        """Print dataset statistics to verify balance"""
+        tool_counts = [0] * self.n_tools
+        type_counts = {"tool": 0, "plan": 0, "value": 0}
+        
+        for example in self.examples:
+            if example["type"] == "tool" and example["tool_labels"] is not None:
+                tool_counts[example["tool_labels"].item()] += 1
+            type_counts[example["type"]] += 1
+        
+        print(f"Dataset Statistics:")
+        print(f"  Total examples: {len(self.examples)}")
+        print(f"  Tool distribution: {tool_counts}")
+        print(f"  Type distribution: {type_counts}")
+        
+        # Verify balance
+        if len(set(tool_counts)) == 1:
+            print("  ✅ Tool distribution is perfectly balanced!")
+        else:
+            print("  ❌ Tool distribution is imbalanced!")
+            print(f"  Expected: {self.n_samples // 3} per tool")
+            print(f"  Actual: {tool_counts}")
 
 
 def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
@@ -201,6 +226,10 @@ def create_dataloader(config, split: str = "train", batch_size: int = 32) -> Dat
         n_samples=1000 if split == "train" else 200,
         max_seq_len=100
     )
+    
+    # Print dataset statistics for verification
+    if split == "train":
+        dataset.print_stats()
     
     return DataLoader(
         dataset,

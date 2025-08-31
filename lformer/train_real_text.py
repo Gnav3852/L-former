@@ -18,12 +18,15 @@ from config import ModelConfig
 
 
 def train_epoch(model, dataloader, optimizer, device, config):
-    """Train for one epoch"""
+    """Train for one epoch with gradient monitoring"""
     model.train()
     total_loss = 0
     total_lm_loss = 0
     total_tool_loss = 0
     total_value_loss = 0
+    
+    # Add gradient monitoring
+    grad_norms = []
     
     for batch_idx, batch in enumerate(tqdm(dataloader, desc="Training")):
         # Move to device
@@ -55,7 +58,23 @@ def train_epoch(model, dataloader, optimizer, device, config):
         # Backward pass
         optimizer.zero_grad()
         losses["total"].backward()
+        
+        # Monitor and clip gradients
+        total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        grad_norms.append(total_norm.item())
+        
         optimizer.step()
+        
+        # Print detailed loss breakdown every 50 batches
+        if batch_idx % 50 == 0:
+            print(f"Batch {batch_idx}: Tool Loss: {losses['tool'].item():.4f}, "
+                  f"LM Loss: {losses['lm'].item():.4f}, "
+                  f"Grad Norm: {total_norm.item():.4f}")
+    
+    # Print gradient statistics
+    if grad_norms:
+        print(f"Gradient Norms - Mean: {sum(grad_norms)/len(grad_norms):.4f}, "
+              f"Max: {max(grad_norms):.4f}, Min: {min(grad_norms):.4f}")
     
     # Return average losses
     num_batches = len(dataloader)
@@ -156,14 +175,28 @@ def main():
     # Final training
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     
+    # Add learning rate scheduler
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.5, patience=2, verbose=True
+    )
+    
     for epoch in range(1, args.epochs + 1):
         print(f"\nEpoch {epoch}/{args.epochs}")
         
         # Train
         train_losses = train_epoch(model, train_dataloader, optimizer, device, config)
         
+        # Validation
+        model.eval()
+        with torch.no_grad():
+            val_losses = train_epoch(model, val_dataloader, optimizer, device, config)
+        
         # Print losses
         print(f"Train Losses: Total={train_losses['total']:.4f}, LM={train_losses['lm']:.4f}, Tool={train_losses['tool']:.4f}, Value={train_losses['value']:.4f}")
+        print(f"Val Losses: Total={val_losses['total']:.4f}, LM={val_losses['lm']:.4f}, Tool={val_losses['tool']:.4f}, Value={val_losses['value']:.4f}")
+        
+        # Update learning rate based on validation loss
+        scheduler.step(val_losses['total'])
         
         # Save checkpoint
         if epoch % 5 == 0:
@@ -172,8 +205,10 @@ def main():
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
                 "config": config,
-                "train_losses": train_losses
+                "train_losses": train_losses,
+                "val_losses": val_losses
             }
             torch.save(checkpoint, f"checkpoints/checkpoint_epoch_{epoch}.pt")
             print(f"Saved checkpoint: checkpoints/checkpoint_epoch_{epoch}.pt")
