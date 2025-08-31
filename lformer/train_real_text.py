@@ -47,6 +47,16 @@ def train_epoch(model, dataloader, optimizer, device, config):
         
         # Get losses
         losses = outputs["losses"]
+        
+        # Dynamic loss balancing
+        if "value" in losses and losses["value"].item() > 1000:
+            print(f"⚠️  Value loss too high: {losses['value'].item():.2f}, scaling down")
+            # Scale down value loss if it's dominating
+            losses["total"] = (
+                config.lambda_lm * losses["lm"] + 
+                config.lambda_plan * (losses["tool"] + losses.get("plan", torch.tensor(0.0)))
+            )
+        
         total_loss += losses["total"].item()
         total_lm_loss += losses["lm"].item()
         
@@ -60,8 +70,17 @@ def train_epoch(model, dataloader, optimizer, device, config):
         losses["total"].backward()
         
         # Monitor and clip gradients
-        total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
         grad_norms.append(total_norm.item())
+        
+        # Warn if gradients are too large
+        if total_norm.item() > 50.0:
+            print(f"⚠️  WARNING: Large gradients detected: {total_norm.item():.2f}")
+        
+        # Skip update if gradients are exploding
+        if total_norm.item() > 100.0:
+            print(f" CRITICAL: Skipping update due to exploding gradients: {total_norm.item():.2f}")
+            continue
         
         optimizer.step()
         
@@ -227,8 +246,13 @@ def main():
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
     
     # Add learning rate scheduler
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=2
+    scheduler = optim.lr_scheduler.OneCycleLR(
+        optimizer, 
+        max_lr=args.lr,
+        epochs=args.epochs,
+        steps_per_epoch=len(train_dataloader),
+        pct_start=0.1,  # Warm up for first 10% of training
+        anneal_strategy='cos'
     )
     
     for epoch in range(1, args.epochs + 1):
@@ -246,7 +270,7 @@ def main():
         print(f"Val Losses: Total={val_losses['total']:.4f}, LM={val_losses['lm']:.4f}, Tool={val_losses['tool']:.4f}, Value={val_losses['value']:.4f}")
         
         # Update learning rate based on validation loss
-        scheduler.step(val_losses['total'])
+        scheduler.step()  # Step-based scheduler
         
         # Save checkpoint
         if epoch % 5 == 0:
