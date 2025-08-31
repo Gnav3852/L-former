@@ -33,7 +33,7 @@ class ModelConfig:
     
     # Reasoning head parameters
     n_tools: int = 5
-    use_value_head: bool = True
+    use_value_head: bool = False  # CHANGE TO FALSE
     use_tool_head: bool = True
     plan_decoder: bool = False
     

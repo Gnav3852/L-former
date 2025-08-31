@@ -166,9 +166,12 @@ def main():
     if args.tiny:
         config = ModelConfig.tiny()
         config.vocab_size = 50257  # GPT-2 vocabulary size
+        config.use_value_head = False  # Disable value head
+        config.use_tool_head = True    # Keep only tool head
     else:
         config = ModelConfig()
         config.vocab_size = 50257  # GPT-2 vocabulary size
+        config.use_value_head = False  # Disable value head
     
     print(f"Config: {config}")
     
